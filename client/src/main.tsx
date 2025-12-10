@@ -6,6 +6,7 @@ import { Toaster } from "@/components/ui/toaster";
 import App from "./App";
 import { WagmiProvider, createConfig, http } from "wagmi";
 import { defineChain } from "viem";
+import { mainnet } from "wagmi/chains";
 import { injected } from "wagmi/connectors";
 
 // Arc Testnet Configuration
@@ -27,12 +28,13 @@ const arcTestnet = defineChain({
 });
 
 const config = createConfig({
-  chains: [arcTestnet],
+  chains: [arcTestnet, mainnet],
   connectors: [
     injected({ shimDisconnect: true }),
   ],
   transports: {
-    [arcTestnet.id]: http(),
+    [arcTestnet.id]: http("https://rpc.testnet.arc.network"),
+    [mainnet.id]: http(),
   },
 });
 

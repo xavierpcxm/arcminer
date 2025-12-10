@@ -658,7 +658,7 @@ export default function App() {
                         className="w-48 bg-primary hover:bg-primary/90"
                         data-testid="button-start-mining"
                       >
-                        <Play className="w-4 h-4 mr-2" /> Iniciar Mineracao
+                        <Play className="w-4 h-4 mr-2" /> Start Mining
                       </Button>
                     )}
 
@@ -669,14 +669,14 @@ export default function App() {
                           variant="secondary"
                           data-testid="button-pause-mining"
                         >
-                          <Pause className="w-4 h-4 mr-2" /> Pausar Mineracao
+                          <Pause className="w-4 h-4 mr-2" /> Pause Mining
                         </Button>
                         <Button 
                           onClick={openStopWarning}
                           variant="destructive"
                           data-testid="button-stop-mining"
                         >
-                          <Square className="w-4 h-4 mr-2" /> Parar Mineracao
+                          <Square className="w-4 h-4 mr-2" /> Stop Mining
                         </Button>
                       </div>
                     )}
@@ -688,14 +688,14 @@ export default function App() {
                           className="bg-primary hover:bg-primary/90"
                           data-testid="button-continue-mining"
                         >
-                          <Play className="w-4 h-4 mr-2" /> Continuar Mineracao
+                          <Play className="w-4 h-4 mr-2" /> Continue Mining
                         </Button>
                         <Button 
                           onClick={openStopWarning}
                           variant="destructive"
                           data-testid="button-stop-mining-paused"
                         >
-                          <Square className="w-4 h-4 mr-2" /> Parar Mineracao
+                          <Square className="w-4 h-4 mr-2" /> Stop Mining
                         </Button>
                       </div>
                     )}
