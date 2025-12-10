@@ -10,7 +10,6 @@ import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Wallet, Zap, Timer, AlertCircle, Terminal, Cpu, Play, Pause, Square, Banknote, History, DollarSign } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { formatUnits } from "viem";
@@ -48,7 +47,6 @@ export default function App() {
   const [pausedProgress, setPausedProgress] = useState(0);
   const [pausedReward, setPausedReward] = useState(0);
   const [pausedTimeLeft, setPausedTimeLeft] = useState(0);
-  const [showPauseDialog, setShowPauseDialog] = useState(false);
 
   useEffect(() => {
     if (!isConnected) {
@@ -185,16 +183,13 @@ export default function App() {
     setPausedReward(accumulatedReward);
     setPausedTimeLeft(timeLeft);
     setMiningState('paused');
-    setShowPauseDialog(true);
   };
 
   const continueMining = () => {
-    setShowPauseDialog(false);
     setMiningState('mining');
   };
 
   const stopAndClaim = () => {
-    setShowPauseDialog(false);
     setMiningState('ready');
   };
 
@@ -205,6 +200,7 @@ export default function App() {
       address: FAUCET_ADDRESS,
       abi: ArcMiningFaucetABI,
       functionName: "claim",
+      chainId: 5042002, // Arc Testnet
     });
   };
 
@@ -436,13 +432,23 @@ export default function App() {
                     )}
 
                     {miningState === 'paused' && (
-                      <Button 
-                        onClick={continueMining}
-                        className="w-40 bg-primary hover:bg-primary/90"
-                        data-testid="button-continue-mining"
-                      >
-                        <Play className="w-4 h-4 mr-2" /> Continue
-                      </Button>
+                      <div className="flex gap-2 flex-wrap">
+                        <Button 
+                          onClick={continueMining}
+                          className="w-40 bg-primary hover:bg-primary/90"
+                          data-testid="button-continue-mining"
+                        >
+                          <Play className="w-4 h-4 mr-2" /> Continue
+                        </Button>
+                        <Button 
+                          onClick={stopAndClaim}
+                          variant="destructive"
+                          className="w-48"
+                          data-testid="button-stop-claim"
+                        >
+                          <Square className="w-4 h-4 mr-2" /> Stop & Claim {accumulatedReward.toFixed(0)} USDC
+                        </Button>
+                      </div>
                     )}
 
                     {miningState === 'ready' && (
@@ -513,41 +519,6 @@ export default function App() {
         </footer>
       </div>
 
-      <Dialog open={showPauseDialog} onOpenChange={setShowPauseDialog}>
-        <DialogContent data-testid="dialog-pause-options">
-          <DialogHeader>
-            <DialogTitle>Mining Paused</DialogTitle>
-            <DialogDescription>
-              Choose what you'd like to do with your mining session.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="bg-primary/5 border border-primary/20 rounded-md p-4">
-              <p className="text-sm text-muted-foreground">Current Progress: <span className="font-bold text-foreground">{Math.round(progress)}%</span></p>
-              <p className="text-sm text-muted-foreground">Pending Reward: <span className="font-bold text-green-500">{accumulatedReward.toFixed(2)} USDC</span></p>
-            </div>
-          </div>
-          <DialogFooter className="flex-col sm:flex-row gap-2">
-            <Button
-              onClick={continueMining}
-              className="w-full sm:w-auto"
-              data-testid="button-dialog-continue"
-            >
-              <Play className="w-4 h-4 mr-2" />
-              Continue Mining
-            </Button>
-            <Button
-              onClick={stopAndClaim}
-              variant="destructive"
-              className="w-full sm:w-auto"
-              data-testid="button-dialog-stop-claim"
-            >
-              <Square className="w-4 h-4 mr-2" />
-              Stop & Claim {accumulatedReward.toFixed(0)} USDC
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }
