@@ -341,7 +341,7 @@ export default function App() {
                 </CardHeader>
                 <CardContent>
                   <div className="text-2xl font-bold text-green-500" data-testid="text-contract-balance">{formatUSDC(contractBalance as bigint)} USDC</div>
-                  <p className="text-xs text-muted-foreground mt-1">Available in Faucet</p>
+                  <p className="text-xs text-muted-foreground mt-1">Available in Mining Pool</p>
                 </CardContent>
               </Card>
             </div>
