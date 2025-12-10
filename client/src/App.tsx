@@ -11,14 +11,14 @@ import { Progress } from "@/components/ui/progress";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { Wallet, Zap, Timer, AlertCircle, Terminal, Cpu, Play, Pause, Square, Banknote, History, DollarSign, Monitor } from "lucide-react";
+import { Wallet, Zap, Timer, AlertCircle, Terminal, Cpu, Play, Pause, Square, Banknote, History, DollarSign, Monitor, AlertTriangle } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { formatUnits } from "viem";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { ClaimHistory } from "@shared/schema";
 
 const USDC_ADDRESS = "0x3600000000000000000000000000000000000000";
+const MAX_CLAIM_LIMIT = BigInt(2000 * 1000000); // 2000 USDC with 6 decimals
 
 const formatUSDC = (value: bigint | undefined) => {
   if (!value) return "0.00";
@@ -48,15 +48,13 @@ export default function App() {
   const { writeContract, data: hash, error: writeError } = useWriteContract();
   const { isLoading: isConfirming, isSuccess: isConfirmed } = useWaitForTransactionReceipt({ hash });
 
-  const [miningState, setMiningState] = useState<'idle' | 'mining' | 'paused' | 'ready'>('idle');
+  const [miningState, setMiningState] = useState<'idle' | 'mining' | 'paused' | 'completed'>('idle');
   const [progress, setProgress] = useState(0);
   const [timeLeft, setTimeLeft] = useState(600000);
   const [hashRate, setHashRate] = useState(0);
-  const [accumulatedReward, setAccumulatedReward] = useState(0);
   const [pausedProgress, setPausedProgress] = useState(0);
-  const [pausedReward, setPausedReward] = useState(0);
   const [pausedTimeLeft, setPausedTimeLeft] = useState(0);
-  const [showClaimDialog, setShowClaimDialog] = useState(false);
+  const [showStopWarning, setShowStopWarning] = useState(false);
   
   const [cpuEnabled, setCpuEnabled] = useState(true);
   const [gpuEnabled, setGpuEnabled] = useState(false);
@@ -118,30 +116,9 @@ export default function App() {
 
   const totalClaimed = claimData ? (claimData as any)[0] : BigInt(0);
   const remainingAllowance = claimData ? (claimData as any)[1] : BigInt(0);
-  const nextClaimTime = claimData ? (claimData as any)[2] : BigInt(0);
-
-  const [globalCooldown, setGlobalCooldown] = useState(0);
-
-  useEffect(() => {
-    if (nextClaimTime) {
-      const now = Math.floor(Date.now() / 1000);
-      const diff = Number(nextClaimTime) - now;
-      if (diff > 0) {
-        setGlobalCooldown(diff * 1000);
-      } else {
-        setGlobalCooldown(0);
-      }
-    }
-  }, [nextClaimTime]);
-
-  useEffect(() => {
-    if (globalCooldown > 0) {
-      const interval = setInterval(() => {
-        setGlobalCooldown((prev) => Math.max(0, prev - 1000));
-      }, 1000);
-      return () => clearInterval(interval);
-    }
-  }, [globalCooldown]);
+  
+  // Check if wallet has reached the 2000 USDC limit
+  const hasReachedLimit = totalClaimed >= MAX_CLAIM_LIMIT;
 
   const getHashRateRange = () => {
     if (cpuEnabled && gpuEnabled) {
@@ -194,24 +171,21 @@ export default function App() {
         const additionalProgress = (elapsed / 600000) * 100;
         const p = Math.min(100, initialProgress + additionalProgress);
         
-        const accumulated = Math.min(200, (p / 100) * 200);
-        
         setTimeLeft(remaining);
         setProgress(p);
-        setAccumulatedReward(accumulated);
         
         const newHashRate = range.min + Math.random() * (range.max - range.min);
         setHashRate(newHashRate);
 
         if (remaining <= 0) {
-          setMiningState('ready');
-          setAccumulatedReward(200);
+          setMiningState('completed');
+          setProgress(100);
           setDisplayedReward(200);
           clearInterval(timer);
-          addLog('reward', 'Mining session completed! Ready to claim 200 USDC');
+          addLog('reward', 'Mining session completed! 200 USDC ready to claim');
           toast({
             title: "Mining Complete!",
-            description: "You mined a block. Ready to claim rewards.",
+            description: "200 USDC ready to claim.",
           });
         }
       }, 100);
@@ -251,11 +225,11 @@ export default function App() {
   }, [miningState, pausedProgress, pausedTimeLeft, cpuEnabled, gpuEnabled]);
 
   const startMining = () => {
-    if (globalCooldown > 0) {
+    if (hasReachedLimit) {
       toast({
         variant: "destructive",
-        title: "Cooldown Active",
-        description: `Wait ${formatTime(globalCooldown)} before mining again.`,
+        title: "Limit Reached",
+        description: "Your wallet has reached the maximum claim limit of 2000 USDC.",
       });
       return;
     }
@@ -270,10 +244,8 @@ export default function App() {
     setMiningState('mining');
     setTimeLeft(600000);
     setProgress(0);
-    setAccumulatedReward(0);
     setDisplayedReward(0);
     setPausedProgress(0);
-    setPausedReward(0);
     setPausedTimeLeft(0);
     setMiningLogs([]);
     setBlocksFound(0);
@@ -283,7 +255,6 @@ export default function App() {
 
   const pauseMining = () => {
     setPausedProgress(progress);
-    setPausedReward(accumulatedReward);
     setPausedTimeLeft(timeLeft);
     setMiningState('paused');
     addLog('info', 'Mining paused by user');
@@ -294,24 +265,31 @@ export default function App() {
     setMiningState('mining');
   };
 
-  const openClaimDialog = () => {
-    setPausedProgress(progress);
-    setPausedReward(accumulatedReward);
-    setPausedTimeLeft(timeLeft);
-    setMiningState('paused');
-    addLog('info', 'Mining paused for claim confirmation');
-    setShowClaimDialog(true);
+  const openStopWarning = () => {
+    setShowStopWarning(true);
   };
 
-  const confirmStopAndClaim = () => {
-    setShowClaimDialog(false);
-    setAccumulatedReward(displayedReward);
-    setMiningState('ready');
-    addLog('info', 'Mining stopped. Ready to claim rewards.');
+  const confirmStop = () => {
+    setShowStopWarning(false);
+    setMiningState('idle');
+    setProgress(0);
+    setTimeLeft(600000);
+    setDisplayedReward(0);
+    setPausedProgress(0);
+    setPausedTimeLeft(0);
+    setMiningLogs([]);
+    setBlocksFound(0);
+    setSharesFound(0);
+    setCanFindShares(false);
+    toast({
+      variant: "destructive",
+      title: "Mining Stopped",
+      description: "All mined balance has been lost. Start again to mine.",
+    });
   };
 
-  const cancelClaimDialog = () => {
-    setShowClaimDialog(false);
+  const cancelStopWarning = () => {
+    setShowStopWarning(false);
   };
 
   const handleClaim = () => {
@@ -329,23 +307,23 @@ export default function App() {
     if (isConfirmed && hash && address) {
       createClaimMutation.mutate({
         walletAddress: address,
-        amount: accumulatedReward.toFixed(6),
+        amount: "200.000000",
         transactionHash: hash,
       });
 
       toast({
         title: "Claim Successful!",
-        description: "USDC has been sent to your wallet.",
+        description: "200 USDC has been sent to your wallet.",
       });
       setMiningState('idle');
-      setAccumulatedReward(0);
       setDisplayedReward(0);
       setProgress(0);
       setPausedProgress(0);
-      setPausedReward(0);
       setPausedTimeLeft(0);
       setMiningLogs([]);
       setCanFindShares(false);
+      setBlocksFound(0);
+      setSharesFound(0);
       refetchClaimInfo();
       refetchBalance();
     }
@@ -423,7 +401,7 @@ export default function App() {
 
         {isConnected && (
           <>
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <Card className="bg-card/50 backdrop-blur-sm border-primary/20">
                 <CardHeader className="pb-2">
                   <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
@@ -432,6 +410,8 @@ export default function App() {
                 </CardHeader>
                 <CardContent>
                   <div className="text-2xl font-bold" data-testid="text-total-claimed">{formatUSDC(totalClaimed)} USDC</div>
+                  <Progress value={Number(totalClaimed) / 20000} className="h-1 mt-2 bg-primary/10" />
+                  <p className="text-xs text-muted-foreground mt-1">Limit: 2,000.00 USDC</p>
                 </CardContent>
               </Card>
 
@@ -443,22 +423,7 @@ export default function App() {
                 </CardHeader>
                 <CardContent>
                   <div className="text-2xl font-bold" data-testid="text-allowance-remaining">{formatUSDC(remainingAllowance)} USDC</div>
-                  <Progress value={Number(remainingAllowance) / 2000 * 100} className="h-1 mt-2 bg-primary/10" />
-                </CardContent>
-              </Card>
-
-              <Card className="bg-card/50 backdrop-blur-sm border-primary/20">
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
-                    <Timer className="w-4 h-4" /> Next Mining Slot
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  {globalCooldown > 0 ? (
-                    <div className="text-2xl font-bold text-orange-500" data-testid="text-cooldown">{formatTime(globalCooldown)}</div>
-                  ) : (
-                    <div className="text-2xl font-bold text-green-500" data-testid="text-ready">READY</div>
-                  )}
+                  <Progress value={Number(remainingAllowance) / 20000} className="h-1 mt-2 bg-primary/10" />
                 </CardContent>
               </Card>
 
@@ -474,6 +439,16 @@ export default function App() {
                 </CardContent>
               </Card>
             </div>
+
+            {hasReachedLimit && (
+              <Alert className="bg-red-500/10 border-red-500/50">
+                <AlertTriangle className="h-4 w-4 text-red-500" />
+                <AlertTitle className="text-red-500">Mining Disabled</AlertTitle>
+                <AlertDescription className="text-red-400">
+                  Your wallet has reached the maximum claim limit of 2,000 USDC. Mining is no longer available for this wallet.
+                </AlertDescription>
+              </Alert>
+            )}
 
             <Card className="border-primary/50 bg-black/40 backdrop-blur-md overflow-hidden relative">
               <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-20 pointer-events-none"></div>
@@ -495,7 +470,7 @@ export default function App() {
                       variant={cpuEnabled ? "default" : "outline"}
                       size="sm"
                       onClick={() => setCpuEnabled(!cpuEnabled)}
-                      disabled={miningState === 'mining'}
+                      disabled={miningState === 'mining' || miningState === 'paused'}
                       className={`gap-2 ${cpuEnabled ? 'bg-blue-600 hover:bg-blue-700' : ''}`}
                       data-testid="button-toggle-cpu"
                     >
@@ -506,7 +481,7 @@ export default function App() {
                       variant={gpuEnabled ? "default" : "outline"}
                       size="sm"
                       onClick={() => setGpuEnabled(!gpuEnabled)}
-                      disabled={miningState === 'mining'}
+                      disabled={miningState === 'mining' || miningState === 'paused'}
                       className={`gap-2 ${gpuEnabled ? 'bg-green-600 hover:bg-green-700' : ''}`}
                       data-testid="button-toggle-gpu"
                     >
@@ -534,13 +509,21 @@ export default function App() {
                     <div className="absolute inset-0 flex items-center justify-center flex-col gap-4 bg-black/80">
                       <Pause className="w-16 h-16 text-yellow-500" />
                       <p className="text-yellow-500 font-bold">Mining Paused</p>
-                      <p className="text-muted-foreground text-center">Click Continue to resume mining</p>
+                      <p className="text-muted-foreground text-center">Timer paused. Click Continue to resume.</p>
                     </div>
                   )}
 
-                  {miningLogs.length > 0 && (
+                  {miningState === 'completed' && (
+                    <div className="absolute inset-0 flex items-center justify-center flex-col gap-4 bg-black/80">
+                      <Banknote className="w-16 h-16 text-green-500" />
+                      <p className="text-green-500 font-bold text-xl">200 USDC Ready!</p>
+                      <p className="text-muted-foreground text-center">Click Claim to receive your rewards.</p>
+                    </div>
+                  )}
+
+                  {miningLogs.length > 0 && miningState !== 'paused' && miningState !== 'completed' && (
                     <div className="space-y-1">
-                      {(miningState === 'mining' || miningState === 'ready') && (
+                      {miningState === 'mining' && (
                         <div className="absolute inset-0 opacity-10 animate-scan bg-gradient-to-b from-transparent via-primary to-transparent h-[50%] w-full pointer-events-none"></div>
                       )}
                       {miningLogs.map((log) => (
@@ -578,7 +561,7 @@ export default function App() {
                   <div className="flex justify-between text-sm">
                     <span className="text-muted-foreground">Session Progress</span>
                     <div className="flex gap-4">
-                      <span className="text-primary font-bold">{displayedReward.toFixed(2)} USDC</span>
+                      <span className="text-primary font-bold">{displayedReward.toFixed(2)} / 200.00 USDC</span>
                       <span className="font-bold">{Math.round(progress)}%</span>
                     </div>
                   </div>
@@ -593,11 +576,11 @@ export default function App() {
                     {miningState === 'idle' && (
                       <Button 
                         onClick={startMining} 
-                        disabled={globalCooldown > 0 || (!cpuEnabled && !gpuEnabled)}
-                        className="w-40 bg-primary hover:bg-primary/90"
+                        disabled={hasReachedLimit || (!cpuEnabled && !gpuEnabled)}
+                        className="w-48 bg-primary hover:bg-primary/90"
                         data-testid="button-start-mining"
                       >
-                        <Play className="w-4 h-4 mr-2" /> Start Mining
+                        <Play className="w-4 h-4 mr-2" /> Iniciar Mineracao
                       </Button>
                     )}
 
@@ -608,14 +591,14 @@ export default function App() {
                           variant="secondary"
                           data-testid="button-pause-mining"
                         >
-                          <Pause className="w-4 h-4 mr-2" /> Pause Mining
+                          <Pause className="w-4 h-4 mr-2" /> Pausar Mineracao
                         </Button>
                         <Button 
-                          onClick={openClaimDialog}
+                          onClick={openStopWarning}
                           variant="destructive"
-                          data-testid="button-stop-claim"
+                          data-testid="button-stop-mining"
                         >
-                          <Square className="w-4 h-4 mr-2" /> Stop & Claim
+                          <Square className="w-4 h-4 mr-2" /> Parar Mineracao
                         </Button>
                       </div>
                     )}
@@ -627,19 +610,19 @@ export default function App() {
                           className="bg-primary hover:bg-primary/90"
                           data-testid="button-continue-mining"
                         >
-                          <Play className="w-4 h-4 mr-2" /> Continue Mining
+                          <Play className="w-4 h-4 mr-2" /> Continuar Mineracao
                         </Button>
                         <Button 
-                          onClick={openClaimDialog}
+                          onClick={openStopWarning}
                           variant="destructive"
-                          data-testid="button-stop-claim-paused"
+                          data-testid="button-stop-mining-paused"
                         >
-                          <Square className="w-4 h-4 mr-2" /> Stop & Claim
+                          <Square className="w-4 h-4 mr-2" /> Parar Mineracao
                         </Button>
                       </div>
                     )}
 
-                    {miningState === 'ready' && (
+                    {miningState === 'completed' && (
                       <Button 
                         onClick={handleClaim} 
                         disabled={isConfirming}
@@ -649,7 +632,7 @@ export default function App() {
                         {isConfirming ? (
                           <>Confirming...</>
                         ) : (
-                          <><Banknote className="w-4 h-4 mr-2" /> Withdraw {displayedReward.toFixed(0)} USDC</>
+                          <><Banknote className="w-4 h-4 mr-2" /> Claim 200 USDC</>
                         )}
                       </Button>
                     )}
@@ -665,9 +648,11 @@ export default function App() {
                 <AlertTitle>System Rules</AlertTitle>
                 <AlertDescription className="text-xs text-muted-foreground space-y-1 mt-2">
                   <p>Each mining session lasts 10 minutes.</p>
-                  <p>Potential reward: up to 200 USDC.</p>
-                  <p>Each wallet can receive up to 2000 USDC.</p>
-                  <p className="break-all">Contract: {FAUCET_ADDRESS}</p>
+                  <p>Complete session reward: 200 USDC.</p>
+                  <p>Each wallet can receive up to 2,000 USDC total.</p>
+                  <p>Pausing the mining also pauses the timer.</p>
+                  <p className="text-red-400 font-semibold">Stopping the mining will reset all mined balance!</p>
+                  <p className="break-all mt-2">Contract: {FAUCET_ADDRESS}</p>
                 </AlertDescription>
               </Alert>
 
@@ -707,53 +692,45 @@ export default function App() {
         </footer>
       </div>
 
-      <Dialog open={showClaimDialog} onOpenChange={setShowClaimDialog}>
-        <DialogContent data-testid="dialog-claim-summary">
+      <Dialog open={showStopWarning} onOpenChange={setShowStopWarning}>
+        <DialogContent data-testid="dialog-stop-warning" className="border-red-500/50">
           <DialogHeader>
-            <DialogTitle>Claim Summary</DialogTitle>
-            <DialogDescription>
-              Review your mining rewards before claiming.
+            <DialogTitle className="flex items-center gap-2 text-red-500">
+              <AlertTriangle className="w-5 h-5" />
+              Warning: Stop Mining
+            </DialogTitle>
+            <DialogDescription className="text-red-400">
+              Are you sure you want to stop mining?
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
-            <div className="bg-primary/5 border border-primary/20 rounded-md p-4 space-y-3">
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Mining Progress:</span>
-                <span className="font-bold">{Math.round(progress)}%</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Shares Found:</span>
-                <span className="font-bold text-green-500">{sharesFound}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-muted-foreground">Blocks Found:</span>
-                <span className="font-bold text-yellow-500">{blocksFound}</span>
-              </div>
-              <div className="border-t border-border pt-3 flex justify-between">
-                <span className="text-muted-foreground">Total Reward:</span>
-                <span className="font-bold text-xl text-cyan-400">{displayedReward.toFixed(2)} USDC</span>
-              </div>
-            </div>
-            <p className="text-xs text-muted-foreground text-center">
-              The reward will be sent from the contract to your connected wallet on Arc Network.
-            </p>
+            <Alert className="bg-red-500/10 border-red-500/50">
+              <AlertTriangle className="h-4 w-4 text-red-500" />
+              <AlertTitle className="text-red-500">You will lose all mined balance!</AlertTitle>
+              <AlertDescription className="text-red-400 mt-2">
+                <p>Current mined: <span className="font-bold">{displayedReward.toFixed(2)} USDC</span></p>
+                <p>Progress: <span className="font-bold">{Math.round(progress)}%</span></p>
+                <p className="mt-2">If you stop now, you will need to start from zero and mine for 10 minutes again to earn 200 USDC.</p>
+              </AlertDescription>
+            </Alert>
           </div>
           <DialogFooter className="flex-col sm:flex-row gap-2">
             <Button
-              onClick={cancelClaimDialog}
+              onClick={cancelStopWarning}
               variant="outline"
               className="w-full sm:w-auto"
-              data-testid="button-dialog-cancel"
+              data-testid="button-cancel-stop"
             >
-              Go Back
+              Cancel
             </Button>
             <Button
-              onClick={confirmStopAndClaim}
-              className="w-full sm:w-auto bg-green-600 hover:bg-green-700"
-              data-testid="button-dialog-confirm"
+              onClick={confirmStop}
+              variant="destructive"
+              className="w-full sm:w-auto"
+              data-testid="button-confirm-stop"
             >
-              <Banknote className="w-4 h-4 mr-2" />
-              Confirm
+              <Square className="w-4 h-4 mr-2" />
+              Yes, Stop Mining
             </Button>
           </DialogFooter>
         </DialogContent>
