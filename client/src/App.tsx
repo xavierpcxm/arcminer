@@ -11,7 +11,7 @@ import { Progress } from "@/components/ui/progress";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Wallet, Zap, Timer, AlertCircle, Terminal, Cpu, Play, Pause, Square, Banknote, History, DollarSign, Monitor, AlertTriangle } from "lucide-react";
+import { Wallet, Zap, AlertCircle, Terminal, Cpu, Play, Pause, Square, Banknote, History, DollarSign, Monitor, AlertTriangle, Link } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { formatUnits } from "viem";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -19,6 +19,7 @@ import type { ClaimHistory } from "@shared/schema";
 
 const USDC_ADDRESS = "0x3600000000000000000000000000000000000000";
 const MAX_CLAIM_LIMIT = BigInt(2000 * 1000000); // 2000 USDC with 6 decimals
+const ARC_TESTNET_CHAIN_ID = 5042002;
 
 const formatUSDC = (value: bigint | undefined) => {
   if (!value) return "0.00";
@@ -67,17 +68,59 @@ export default function App() {
   const logIdRef = useRef(0);
   const scrollRef = useRef<HTMLDivElement>(null);
 
+  const isOnArcNetwork = currentChainId === ARC_TESTNET_CHAIN_ID;
+  const [isSwitchingNetwork, setIsSwitchingNetwork] = useState(false);
+
+  // Auto-connect wallet on load
   useEffect(() => {
     if (!isConnected) {
       connect({ connector: injected() });
     }
   }, [connect, isConnected]);
 
+  // Auto-switch to Arc Testnet when connected but on wrong network
   useEffect(() => {
-    if (isConnected && currentChainId !== 5042002) {
-      switchChain({ chainId: 5042002 });
+    const switchToArcNetwork = async () => {
+      if (isConnected && currentChainId !== ARC_TESTNET_CHAIN_ID && !isSwitchingNetwork) {
+        setIsSwitchingNetwork(true);
+        try {
+          await switchChain({ chainId: ARC_TESTNET_CHAIN_ID });
+          toast({
+            title: "Network Changed",
+            description: "Switched to Arc Testnet successfully.",
+          });
+        } catch (error) {
+          toast({
+            variant: "destructive",
+            title: "Network Switch Failed",
+            description: "Please switch to Arc Testnet manually in your wallet.",
+          });
+        } finally {
+          setIsSwitchingNetwork(false);
+        }
+      }
+    };
+    switchToArcNetwork();
+  }, [isConnected, currentChainId, switchChain, isSwitchingNetwork]);
+
+  const handleSwitchNetwork = async () => {
+    setIsSwitchingNetwork(true);
+    try {
+      await switchChain({ chainId: ARC_TESTNET_CHAIN_ID });
+      toast({
+        title: "Network Changed",
+        description: "Switched to Arc Testnet successfully.",
+      });
+    } catch (error) {
+      toast({
+        variant: "destructive",
+        title: "Network Switch Failed",
+        description: "Please switch to Arc Testnet manually in your wallet.",
+      });
+    } finally {
+      setIsSwitchingNetwork(false);
     }
-  }, [isConnected, currentChainId, switchChain]);
+  };
 
   const { data: claimData, refetch: refetchClaimInfo } = useReadContract({
     address: FAUCET_ADDRESS,
@@ -225,6 +268,14 @@ export default function App() {
   }, [miningState, pausedProgress, pausedTimeLeft, cpuEnabled, gpuEnabled]);
 
   const startMining = () => {
+    if (!isOnArcNetwork) {
+      toast({
+        variant: "destructive",
+        title: "Wrong Network",
+        description: "Please switch to Arc Testnet to start mining.",
+      });
+      return;
+    }
     if (hasReachedLimit) {
       toast({
         variant: "destructive",
@@ -294,12 +345,20 @@ export default function App() {
 
   const handleClaim = () => {
     if (!isConnected || !address) return;
+    if (!isOnArcNetwork) {
+      toast({
+        variant: "destructive",
+        title: "Wrong Network",
+        description: "Please switch to Arc Testnet to claim rewards.",
+      });
+      return;
+    }
     
     writeContract({
       address: FAUCET_ADDRESS,
       abi: ArcMiningFaucetABI,
       functionName: "claim",
-      chainId: 5042002,
+      chainId: ARC_TESTNET_CHAIN_ID,
     });
   };
 
@@ -450,6 +509,25 @@ export default function App() {
               </Alert>
             )}
 
+            {!isOnArcNetwork && (
+              <Alert className="bg-orange-500/10 border-orange-500/50">
+                <Link className="h-4 w-4 text-orange-500" />
+                <AlertTitle className="text-orange-500">Wrong Network</AlertTitle>
+                <AlertDescription className="text-orange-400">
+                  <p className="mb-2">You are not connected to Arc Testnet. Mining and claiming are only available on Arc Testnet.</p>
+                  <Button 
+                    onClick={handleSwitchNetwork}
+                    disabled={isSwitchingNetwork}
+                    size="sm"
+                    className="bg-orange-600 hover:bg-orange-700 text-white"
+                    data-testid="button-switch-network"
+                  >
+                    {isSwitchingNetwork ? "Switching..." : "Switch to Arc Testnet"}
+                  </Button>
+                </AlertDescription>
+              </Alert>
+            )}
+
             <Card className="border-primary/50 bg-black/40 backdrop-blur-md overflow-hidden relative">
               <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-20 pointer-events-none"></div>
               
@@ -576,7 +654,7 @@ export default function App() {
                     {miningState === 'idle' && (
                       <Button 
                         onClick={startMining} 
-                        disabled={hasReachedLimit || (!cpuEnabled && !gpuEnabled)}
+                        disabled={!isOnArcNetwork || hasReachedLimit || (!cpuEnabled && !gpuEnabled)}
                         className="w-48 bg-primary hover:bg-primary/90"
                         data-testid="button-start-mining"
                       >
@@ -625,7 +703,7 @@ export default function App() {
                     {miningState === 'completed' && (
                       <Button 
                         onClick={handleClaim} 
-                        disabled={isConfirming}
+                        disabled={!isOnArcNetwork || isConfirming}
                         className="w-48 bg-green-600 hover:bg-green-700 text-white"
                         data-testid="button-claim"
                       >
