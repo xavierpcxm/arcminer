@@ -17,7 +17,9 @@ export class MemStorage implements IStorage {
   async createClaimHistory(insertClaim: InsertClaimHistory): Promise<ClaimHistory> {
     const id = randomUUID();
     const claim: ClaimHistory = {
-      ...insertClaim,
+      walletAddress: insertClaim.walletAddress,
+      amount: insertClaim.amount,
+      transactionHash: insertClaim.transactionHash ?? null,
       id,
       claimedAt: new Date(),
     };
