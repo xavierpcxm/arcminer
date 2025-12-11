@@ -98,5 +98,57 @@ export async function registerRoutes(
     }
   });
 
+  app.get("/api/total-claimed", async (req, res) => {
+    try {
+      const response = await fetch(
+        `${ARCSCAN_API}?module=account&action=tokentx&address=${FAUCET_CONTRACT}&page=1&offset=1000&sort=desc`
+      );
+      
+      if (!response.ok) {
+        throw new Error('Failed to fetch from arcscan');
+      }
+      
+      const data = await response.json();
+      
+      if (data.status !== "1" || !data.result) {
+        res.json({ totalClaimed: "0", claimCount: 0 });
+        return;
+      }
+      
+      const TARGET_VALUE = BigInt(200) * BigInt(10 ** 6);
+      
+      const validClaims = (data.result as ArcscanTokenTransfer[])
+        .filter((tx: ArcscanTokenTransfer) => {
+          const fromLower = tx.from.toLowerCase();
+          const contractLower = FAUCET_CONTRACT.toLowerCase();
+          const tokenLower = tx.contractAddress?.toLowerCase() || '';
+          const usdcLower = USDC_ADDRESS.toLowerCase();
+          
+          try {
+            const valueBigInt = BigInt(tx.value);
+            return fromLower === contractLower && 
+                   tokenLower === usdcLower && 
+                   valueBigInt === TARGET_VALUE;
+          } catch {
+            return false;
+          }
+        });
+      
+      const totalClaimed = validClaims.reduce((sum, tx) => {
+        const decimals = parseInt(tx.tokenDecimal || '6');
+        const value = Number(BigInt(tx.value)) / Math.pow(10, decimals);
+        return sum + value;
+      }, 0);
+      
+      res.json({ 
+        totalClaimed: totalClaimed.toFixed(2), 
+        claimCount: validClaims.length 
+      });
+    } catch (error: any) {
+      console.error('Error fetching total claimed:', error);
+      res.json({ totalClaimed: "0", claimCount: 0 });
+    }
+  });
+
   return httpServer;
 }

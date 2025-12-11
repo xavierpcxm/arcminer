@@ -11,12 +11,10 @@ import { Progress } from "@/components/ui/progress";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Wallet, Zap, AlertCircle, Terminal, Cpu, Play, Pause, Square, Banknote, History, DollarSign, Monitor, AlertTriangle, Link, Clock, ChevronLeft, ChevronRight, User } from "lucide-react";
+import { Wallet, Zap, AlertCircle, Terminal, Cpu, Play, Pause, Square, Banknote, DollarSign, Monitor, AlertTriangle, Link, Clock, TrendingUp } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { formatUnits } from "viem";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import type { ClaimHistory } from "@shared/schema";
-import { formatDistanceToNow } from "date-fns";
 import { SiX, SiGithub, SiYoutube, SiInstagram, SiTelegram, SiDiscord } from "react-icons/si";
 
 const USDC_ADDRESS = "0x3600000000000000000000000000000000000000";
@@ -75,8 +73,6 @@ export default function App() {
   
   const [cooldownTimeLeft, setCooldownTimeLeft] = useState(0);
   const [isOnCooldown, setIsOnCooldown] = useState(false);
-  const [historyPage, setHistoryPage] = useState(1);
-  const CLAIMS_PER_PAGE = 10;
 
   // Auto-connect wallet on load
   useEffect(() => {
@@ -160,8 +156,8 @@ export default function App() {
     },
   });
 
-  const { data: claimHistoryData, isLoading: isLoadingHistory } = useQuery<ClaimHistory[]>({
-    queryKey: ['/api/claim-history'],
+  const { data: totalClaimedData, isLoading: isLoadingTotalClaimed } = useQuery<{ totalClaimed: string; claimCount: number }>({
+    queryKey: ['/api/total-claimed'],
     refetchInterval: 30000,
     staleTime: 0,
   });
@@ -172,7 +168,7 @@ export default function App() {
       return await res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/claim-history'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/total-claimed'] });
     },
   });
 
@@ -514,68 +510,25 @@ export default function App() {
             <Card className="bg-card/50 backdrop-blur-sm border-primary/20 max-w-2xl mx-auto">
               <CardHeader className="pb-2">
                 <CardTitle className="text-sm font-medium flex items-center gap-2">
-                  <History className="w-4 h-4" /> Claim History
+                  <TrendingUp className="w-4 h-4" /> Total Distributed
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="space-y-3 max-h-64 overflow-y-auto dark-scrollbar">
-                  {isLoadingHistory ? (
-                    <p className="text-xs text-muted-foreground text-center py-4">Loading claims...</p>
-                  ) : claimHistoryData && claimHistoryData.length > 0 ? (
-                    <>
-                      {claimHistoryData
-                        .slice((historyPage - 1) * CLAIMS_PER_PAGE, historyPage * CLAIMS_PER_PAGE)
-                        .map((claim) => (
-                          <div key={claim.id} className="bg-background/50 rounded-md p-3 border border-border/30" data-testid={`claim-history-welcome-${claim.id}`}>
-                            <div className="flex justify-between items-start">
-                              <div className="flex flex-col gap-1">
-                                <span className="font-bold text-green-500 text-sm">+{parseFloat(claim.amount).toFixed(2)} USDC</span>
-                                <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                                  <User className="w-3 h-3" />
-                                  <span className="font-mono">{claim.walletAddress.slice(0, 7)}...{claim.walletAddress.slice(-4)}</span>
-                                  <span>·</span>
-                                  <span>{formatDistanceToNow(new Date(claim.claimedAt), { addSuffix: true })}</span>
-                                </div>
-                              </div>
-                            </div>
-                          </div>
-                        ))}
-                      {claimHistoryData.length > CLAIMS_PER_PAGE && (
-                        <div className="flex items-center justify-center gap-1 pt-2">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => setHistoryPage(prev => Math.max(1, prev - 1))}
-                            disabled={historyPage === 1}
-                            data-testid="button-history-prev-welcome"
-                          >
-                            <ChevronLeft className="w-4 h-4" />
-                          </Button>
-                          {Array.from({ length: Math.ceil(claimHistoryData.length / CLAIMS_PER_PAGE) }, (_, i) => i + 1).map(page => (
-                            <Button
-                              key={page}
-                              variant={historyPage === page ? "default" : "ghost"}
-                              size="sm"
-                              onClick={() => setHistoryPage(page)}
-                              data-testid={`button-history-page-welcome-${page}`}
-                            >
-                              {page}
-                            </Button>
-                          ))}
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => setHistoryPage(prev => Math.min(Math.ceil(claimHistoryData.length / CLAIMS_PER_PAGE), prev + 1))}
-                            disabled={historyPage >= Math.ceil(claimHistoryData.length / CLAIMS_PER_PAGE)}
-                            data-testid="button-history-next-welcome"
-                          >
-                            <ChevronRight className="w-4 h-4" />
-                          </Button>
-                        </div>
-                      )}
-                    </>
+                <div className="text-center py-4">
+                  {isLoadingTotalClaimed ? (
+                    <p className="text-xs text-muted-foreground">Loading...</p>
                   ) : (
-                    <p className="text-xs text-muted-foreground text-center py-4">No claims yet</p>
+                    <div className="space-y-2">
+                      <div className="text-4xl font-bold text-green-500" data-testid="text-total-distributed-welcome">
+                        {totalClaimedData?.totalClaimed || "0.00"} USDC
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        Total claimed by {totalClaimedData?.claimCount || 0} miners from the faucet
+                      </p>
+                      <p className="text-xs text-muted-foreground font-mono break-all mt-2">
+                        Faucet: {FAUCET_ADDRESS}
+                      </p>
+                    </div>
                   )}
                 </div>
               </CardContent>
@@ -865,68 +818,22 @@ export default function App() {
               <Card className="bg-card/50 backdrop-blur-sm border-primary/20">
                 <CardHeader className="pb-2">
                   <CardTitle className="text-sm font-medium flex items-center gap-2">
-                    <History className="w-4 h-4" /> Claim History
+                    <TrendingUp className="w-4 h-4" /> Total Distributed
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="space-y-3 max-h-64 overflow-y-auto dark-scrollbar">
-                    {isLoadingHistory ? (
-                      <p className="text-xs text-muted-foreground text-center py-4">Loading claims...</p>
-                    ) : claimHistoryData && claimHistoryData.length > 0 ? (
-                      <>
-                        {claimHistoryData
-                          .slice((historyPage - 1) * CLAIMS_PER_PAGE, historyPage * CLAIMS_PER_PAGE)
-                          .map((claim) => (
-                            <div key={claim.id} className="bg-background/50 rounded-md p-3 border border-border/30" data-testid={`claim-history-${claim.id}`}>
-                              <div className="flex justify-between items-start">
-                                <div className="flex flex-col gap-1">
-                                  <span className="font-bold text-green-500 text-sm">+{parseFloat(claim.amount).toFixed(2)} USDC</span>
-                                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                                    <User className="w-3 h-3" />
-                                    <span className="font-mono">{claim.walletAddress.slice(0, 7)}...{claim.walletAddress.slice(-4)}</span>
-                                    <span>·</span>
-                                    <span>{formatDistanceToNow(new Date(claim.claimedAt), { addSuffix: true })}</span>
-                                  </div>
-                                </div>
-                              </div>
-                            </div>
-                          ))}
-                        {claimHistoryData.length > CLAIMS_PER_PAGE && (
-                          <div className="flex items-center justify-center gap-1 pt-2">
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => setHistoryPage(prev => Math.max(1, prev - 1))}
-                              disabled={historyPage === 1}
-                              data-testid="button-history-prev"
-                            >
-                              <ChevronLeft className="w-4 h-4" />
-                            </Button>
-                            {Array.from({ length: Math.ceil(claimHistoryData.length / CLAIMS_PER_PAGE) }, (_, i) => i + 1).map(page => (
-                              <Button
-                                key={page}
-                                variant={historyPage === page ? "default" : "ghost"}
-                                size="sm"
-                                onClick={() => setHistoryPage(page)}
-                                data-testid={`button-history-page-${page}`}
-                              >
-                                {page}
-                              </Button>
-                            ))}
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => setHistoryPage(prev => Math.min(Math.ceil(claimHistoryData.length / CLAIMS_PER_PAGE), prev + 1))}
-                              disabled={historyPage >= Math.ceil(claimHistoryData.length / CLAIMS_PER_PAGE)}
-                              data-testid="button-history-next"
-                            >
-                              <ChevronRight className="w-4 h-4" />
-                            </Button>
-                          </div>
-                        )}
-                      </>
+                  <div className="text-center py-4">
+                    {isLoadingTotalClaimed ? (
+                      <p className="text-xs text-muted-foreground">Loading...</p>
                     ) : (
-                      <p className="text-xs text-muted-foreground text-center py-4">No claims yet</p>
+                      <div className="space-y-2">
+                        <div className="text-4xl font-bold text-green-500" data-testid="text-total-distributed">
+                          {totalClaimedData?.totalClaimed || "0.00"} USDC
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                          Total claimed by {totalClaimedData?.claimCount || 0} miners from the faucet
+                        </p>
+                      </div>
                     )}
                   </div>
                 </CardContent>
